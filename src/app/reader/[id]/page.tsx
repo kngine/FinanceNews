@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { getNewsFeed } from "@/lib/news/fetchFeeds";
 import { getReaderContent } from "@/lib/news/readerContent";
 
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
 type ReaderPageProps = {
   params: Promise<{
     id: string;

@@ -1,7 +1,7 @@
 import { unstable_cache } from "next/cache";
-import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
 import type { Article } from "./types";
+
+type JSDOMConstructor = typeof import("jsdom").JSDOM;
 
 export type ReaderContent = {
   title: string;
@@ -30,6 +30,10 @@ const getCachedReaderContent = unstable_cache(
     fallbackSummary: string,
   ): Promise<ReaderContent> => {
     try {
+      const [{ Readability }, { JSDOM }] = await Promise.all([
+        import("@mozilla/readability"),
+        import("jsdom"),
+      ]);
       const html = await fetchArticleHtml(url);
       const dom = new JSDOM(html, { url });
       const document = dom.window.document;
@@ -43,7 +47,10 @@ const getCachedReaderContent = unstable_cache(
         keepClasses: false,
       }).parse();
 
-      const readabilityParagraphs = paragraphsFromHtml(readable?.content ?? "");
+      const readabilityParagraphs = paragraphsFromHtml(
+        readable?.content ?? "",
+        JSDOM,
+      );
 
       if (readabilityParagraphs.length > 0) {
         return {
@@ -208,7 +215,10 @@ function extractAuthor(value: unknown): string {
   return "";
 }
 
-function paragraphsFromHtml(html: string): string[] {
+function paragraphsFromHtml(
+  html: string,
+  JSDOM: JSDOMConstructor,
+): string[] {
   const dom = new JSDOM(html);
 
   return Array.from(dom.window.document.querySelectorAll("p"))
