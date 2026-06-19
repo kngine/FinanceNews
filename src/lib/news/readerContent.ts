@@ -42,8 +42,13 @@ const BLOCKED_TEXT_PATTERNS = [
 
 // A candidate is "good enough" to stop searching once it clears this bar.
 const STRONG_CONTENT_CHARS = 1800;
-// Below this, we treat the extraction as a stub and keep trying other hacks.
-const MIN_CONTENT_CHARS = 400;
+// Hard ceiling on total extraction time. Serverless platforms (Netlify,
+// Vercel) kill long-running functions, so we always return whatever we have
+// by this deadline rather than letting the request hang and fail.
+const EXTRACTION_BUDGET_MS = 8000;
+const HTML_FETCH_TIMEOUT_MS = 6000;
+const AMP_FETCH_TIMEOUT_MS = 5000;
+const JINA_FETCH_TIMEOUT_MS = 6500;
 
 const BROWSER_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -75,37 +80,61 @@ const getCachedReaderContent = unstable_cache(
       }
     };
 
-    // Strategy 1 & 2: fetch the publisher HTML with a couple of different
-    // user agents (Googlebot first — it slips past many soft paywalls), then
-    // run every extractor we have against whichever response looks richest.
-    for (const ua of [GOOGLEBOT_UA, BROWSER_UA]) {
-      if (best && contentLength(best) >= STRONG_CONTENT_CHARS) {
-        break;
-      }
+    const isStrong = () => Boolean(best && contentLength(best) >= STRONG_CONTENT_CHARS);
 
-      const html = await safeFetchHtml(url, ua);
-      if (!html) {
-        continue;
-      }
-
-      let dom: import("jsdom").JSDOM;
+    const parseDocument = (html: string): Document | null => {
       try {
-        dom = new JSDOM(html, { url });
+        const document = new JSDOM(html, { url }).window.document;
+        consider(extractJsonLd(document, fallbackTitle));
+        consider(extractWithReadability(document, Readability, JSDOM, fallbackTitle));
+        consider(extractArticleParagraphs(document, fallbackTitle));
+        if (!best) {
+          const description = metaDescription(document);
+          if (description) {
+            consider({
+              title: titleFromDocument(document) || fallbackTitle,
+              byline: "",
+              excerpt: description,
+              paragraphs: [description],
+              source: "metadata",
+            });
+          }
+        }
+        return document;
       } catch {
-        continue;
+        return null;
       }
-      const document = dom.window.document;
+    };
 
-      consider(extractJsonLd(document, fallbackTitle));
-      consider(extractWithReadability(document, Readability, JSDOM, fallbackTitle));
-      consider(extractArticleParagraphs(document, fallbackTitle));
+    const work = (async () => {
+      // Strategy 1 & 2: fetch the publisher HTML with two user agents in
+      // parallel (Googlebot first — it slips past many soft paywalls), then
+      // run every extractor against whichever response looks richest.
+      const [googlebotHtml, browserHtml] = await Promise.all([
+        safeFetchHtml(url, GOOGLEBOT_UA, HTML_FETCH_TIMEOUT_MS),
+        safeFetchHtml(url, BROWSER_UA, HTML_FETCH_TIMEOUT_MS),
+      ]);
+
+      let primaryDoc: Document | null = null;
+      for (const html of [googlebotHtml, browserHtml]) {
+        if (!html) {
+          continue;
+        }
+        const document = parseDocument(html);
+        if (document && !primaryDoc) {
+          primaryDoc = document;
+        }
+        if (isStrong()) {
+          break;
+        }
+      }
 
       // Strategy 3: follow the AMP version, which is usually lean and
       // paywall-free, when the page advertises one.
-      if (!best || contentLength(best) < STRONG_CONTENT_CHARS) {
-        const ampUrl = findAmpUrl(document, url);
+      if (primaryDoc && !isStrong()) {
+        const ampUrl = findAmpUrl(primaryDoc, url);
         if (ampUrl && ampUrl !== url) {
-          const ampHtml = await safeFetchHtml(ampUrl, ua);
+          const ampHtml = await safeFetchHtml(ampUrl, GOOGLEBOT_UA, AMP_FETCH_TIMEOUT_MS);
           if (ampHtml) {
             try {
               const ampDoc = new JSDOM(ampHtml, { url: ampUrl }).window.document;
@@ -124,35 +153,23 @@ const getCachedReaderContent = unstable_cache(
         }
       }
 
-      // Keep meta description around as a weak fallback.
-      if (!best) {
-        const description = metaDescription(document);
-        if (description) {
-          consider({
-            title: titleFromDocument(document) || fallbackTitle,
-            byline: "",
-            excerpt: description,
-            paragraphs: [description],
-            source: "metadata",
-          });
-        }
+      // Strategy 4: when local extraction is thin (JS-rendered pages, hard
+      // paywalls), fall back to the Jina AI reader proxy, which renders the
+      // page server-side and returns clean article text.
+      if (!isStrong()) {
+        consider(await fetchViaJina(url, fallbackTitle, JINA_FETCH_TIMEOUT_MS));
       }
-    }
+    })();
 
-    // Strategy 4: when local extraction is thin (JS-rendered pages, hard
-    // paywalls), fall back to the Jina AI reader proxy, which renders the page
-    // server-side and returns clean article text.
-    if (!best || contentLength(best) < STRONG_CONTENT_CHARS) {
-      const jina = await fetchViaJina(url, fallbackTitle);
-      consider(jina);
-    }
+    // Whichever finishes first: the extraction work or the time budget. Either
+    // way `best` holds the richest candidate gathered so far.
+    await Promise.race([
+      work.catch(() => undefined),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, EXTRACTION_BUDGET_MS);
+      }),
+    ]);
 
-    if (best && contentLength(best) >= MIN_CONTENT_CHARS) {
-      return finalize(best);
-    }
-
-    // If everything thin out, still surface whatever we scraped before the
-    // RSS summary, since partial text beats none.
     if (best) {
       return finalize(best);
     }
@@ -195,7 +212,11 @@ function contentLength(candidate: Candidate): number {
   return candidate.paragraphs.reduce((total, p) => total + p.length, 0);
 }
 
-async function safeFetchHtml(url: string, userAgent: string): Promise<string | null> {
+async function safeFetchHtml(
+  url: string,
+  userAgent: string,
+  timeoutMs: number,
+): Promise<string | null> {
   try {
     const response = await fetch(url, {
       headers: {
@@ -211,7 +232,7 @@ async function safeFetchHtml(url: string, userAgent: string): Promise<string | n
         "Upgrade-Insecure-Requests": "1",
       },
       redirect: "follow",
-      signal: AbortSignal.timeout(9000),
+      signal: AbortSignal.timeout(timeoutMs),
       next: { revalidate: 1800 },
     });
 
@@ -228,6 +249,7 @@ async function safeFetchHtml(url: string, userAgent: string): Promise<string | n
 async function fetchViaJina(
   url: string,
   fallbackTitle: string,
+  timeoutMs: number,
 ): Promise<Candidate | null> {
   try {
     const response = await fetch(`https://r.jina.ai/${url}`, {
@@ -235,7 +257,7 @@ async function fetchViaJina(
         Accept: "text/plain",
         "X-Return-Format": "text",
       },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
       next: { revalidate: 1800 },
     });
 
