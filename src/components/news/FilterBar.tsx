@@ -19,77 +19,83 @@ export function FilterBar({
   query = "",
 }: FilterBarProps) {
   return (
-    <section className="rounded-[2rem] border border-slate-200 bg-white/90 p-3 shadow-card backdrop-blur">
-      <form className="space-y-4" role="search">
-        <div className="flex flex-col gap-3 md:flex-row">
-          <label className="relative flex-1">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-              Search
-            </span>
-            <input
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-4 pl-20 pr-4 text-sm font-semibold outline-none transition focus:border-teal-300 focus:bg-white"
-              defaultValue={query}
-              name="q"
-              placeholder="ticker, company, source, topic"
-              type="search"
-            />
-          </label>
-          <select
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-black text-ink outline-none transition focus:border-teal-300 focus:bg-white md:w-64"
-            defaultValue={activeSource}
-            name="source"
+    <section className="space-y-3">
+      <form className="flex flex-col gap-2.5 sm:flex-row" role="search">
+        <label className="relative flex-1">
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-faint"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
           >
-            <option value="All">All sources</option>
-            {sources.map((source) => (
-              <option key={source.id} value={source.id}>
-                {source.name}
-              </option>
-            ))}
-          </select>
-          <button
-            className="rounded-2xl bg-ink px-6 py-4 text-sm font-black text-white transition hover:bg-market"
-            type="submit"
-          >
-            Apply
-          </button>
-        </div>
-
-        {activeTag ? (
-          <input name="tag" type="hidden" value={activeTag} />
-        ) : null}
-
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {["All", ...categories].map((category) => {
-            const active = category === activeCategory;
-
-            return (
-              <Link
-                className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-black transition ${
-                  active
-                    ? "bg-market text-white"
-                    : "bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-market"
-                }`}
-                href={buildCategoryHref(category, activeSource, query, activeTag)}
-                key={category}
-              >
-                {category}
-              </Link>
-            );
-          })}
-        </div>
-
-        {activeTag ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white">
-            <span>Showing ticker ${activeTag.toUpperCase()}</span>
-            <Link
-              className="rounded-full bg-white/15 px-3 py-1 text-xs font-black transition hover:bg-white/25"
-              href="/"
-            >
-              Clear
-            </Link>
-          </div>
-        ) : null}
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3-3" strokeLinecap="round" />
+          </svg>
+          <input
+            className="w-full rounded-full border border-line bg-surface py-2.5 pl-10 pr-4 text-sm font-medium text-ink outline-none transition placeholder:text-faint focus:border-rh-green"
+            defaultValue={query}
+            name="q"
+            placeholder="Search news, tickers, companies"
+            type="search"
+          />
+        </label>
+        <select
+          className="rounded-full border border-line bg-surface px-4 py-2.5 text-sm font-semibold text-ink outline-none transition focus:border-rh-green sm:w-52"
+          defaultValue={activeSource}
+          name="source"
+        >
+          <option value="All">All sources</option>
+          {sources.map((source) => (
+            <option key={source.id} value={source.id}>
+              {source.name}
+            </option>
+          ))}
+        </select>
+        {activeTag ? <input name="tag" type="hidden" value={activeTag} /> : null}
+        <button
+          className="rounded-full bg-rh-green px-6 py-2.5 text-sm font-bold text-black transition hover:brightness-110"
+          type="submit"
+        >
+          Search
+        </button>
       </form>
+
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {["All", ...categories].map((category) => {
+          const active = category === activeCategory;
+
+          return (
+            <Link
+              className={`whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                active
+                  ? "bg-rh-green text-black"
+                  : "border border-line bg-surface text-muted hover:border-[#2f333b] hover:text-ink"
+              }`}
+              href={buildCategoryHref(category, activeSource, query, activeTag)}
+              key={category}
+            >
+              {category}
+            </Link>
+          );
+        })}
+      </div>
+
+      {activeTag ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 text-sm font-semibold text-ink">
+          <span>
+            Filtering by{" "}
+            <span className="font-bold text-rh-green">${activeTag.toUpperCase()}</span>
+          </span>
+          <Link
+            className="rounded-full bg-surface-2 px-3 py-1 text-xs font-bold text-muted transition hover:text-ink"
+            href="/"
+          >
+            Clear
+          </Link>
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -29,6 +29,7 @@ export type Article = {
   publishedAt: string;
   tags: string[];
   tickers: string[];
+  imageUrl?: string;
 };
 
 export type FeedError = {

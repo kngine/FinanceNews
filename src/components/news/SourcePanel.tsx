@@ -10,56 +10,66 @@ export function SourcePanel({ sources, errors, generatedAt }: SourcePanelProps) 
   const offlineSourceIds = new Set(errors.map((error) => error.sourceId));
 
   return (
-    <aside className="space-y-5">
-      <section
-        className="rounded-3xl border border-slate-200 bg-white p-5 shadow-card"
-        id="sources"
-      >
-        <h2 className="text-lg font-black text-ink">Verified Sources</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          Finance News only displays allowlisted public feeds and always sends
-          readers to the original publisher.
-        </p>
-        <div className="mt-5 space-y-3">
-          {sources.map((source) => (
-            <a
-              className="block rounded-2xl border border-slate-100 bg-slate-50 p-4 transition hover:border-teal-200 hover:bg-teal-50"
-              href={source.homepageUrl}
-              key={source.id}
-              rel="noreferrer"
-              target="_blank"
-            >
-              <span className="block text-sm font-black text-ink">
-                {source.name}
-              </span>
-              <span className="mt-1 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                <span>{source.category}</span>
-                <span aria-hidden="true">·</span>
-                <span>
-                  {offlineSourceIds.has(source.id) ? "Retrying" : "Live"}
+    <aside className="space-y-4" id="sources">
+      <section className="rounded-2xl border border-line bg-surface p-4">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-faint">
+          Sources
+        </h2>
+        <div className="mt-3 space-y-1">
+          {sources.map((source) => {
+            const offline = offlineSourceIds.has(source.id);
+
+            return (
+              <a
+                className="flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition hover:bg-surface-2"
+                href={source.homepageUrl}
+                key={source.id}
+                rel="noreferrer"
+                target="_blank"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-ink">
+                    {source.name}
+                  </span>
+                  <span className="block text-xs text-faint">
+                    {source.category}
+                  </span>
                 </span>
-              </span>
-            </a>
-          ))}
+                <span className="flex shrink-0 items-center gap-1.5 text-xs font-semibold">
+                  <span
+                    aria-hidden="true"
+                    className={`size-1.5 rounded-full ${
+                      offline ? "bg-rh-red" : "bg-rh-green"
+                    }`}
+                  />
+                  <span className={offline ? "text-rh-red" : "text-muted"}>
+                    {offline ? "Retrying" : "Live"}
+                  </span>
+                </span>
+              </a>
+            );
+          })}
         </div>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-card">
-        <h2 className="text-lg font-black text-ink">Source Policy</h2>
-        <ul className="mt-3 space-y-3 text-sm leading-6 text-slate-600">
-          <li>Feeds are allowlisted from trusted publishers.</li>
-          <li>Reader mode extracts content when the publisher page provides it.</li>
-          <li>Original source links stay available on every story.</li>
+      <section className="rounded-2xl border border-line bg-surface p-4">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-faint">
+          How it works
+        </h2>
+        <ul className="mt-3 space-y-2 text-sm leading-6 text-muted">
+          <li>Allowlisted public feeds from trusted publishers.</li>
+          <li>Reader mode pulls the full article text when available.</li>
+          <li>Original source links stay on every story.</li>
           <li>Last refreshed {formatDate(generatedAt)}.</li>
         </ul>
       </section>
 
       {errors.length > 0 ? (
-        <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          <h2 className="font-black">Temporarily unavailable</h2>
-          <p className="mt-2 leading-6">
-            Some sources did not respond during the latest refresh. Available
-            sources are still shown.
+        <section className="rounded-2xl border border-rh-red/30 bg-rh-red/5 p-4 text-sm text-rh-red">
+          <h2 className="font-bold">Some feeds are retrying</h2>
+          <p className="mt-1.5 leading-6 text-muted">
+            A few sources did not respond in the latest refresh. Everything else
+            is still live.
           </p>
         </section>
       ) : null}

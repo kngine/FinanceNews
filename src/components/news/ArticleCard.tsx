@@ -8,72 +8,143 @@ type ArticleCardProps = {
 
 export function ArticleCard({ article, featured = false }: ArticleCardProps) {
   const tickers = article.tickers ?? [];
+  const readerHref = `/reader/${encodeURIComponent(article.id)}`;
+
+  if (featured) {
+    return (
+      <article className="group overflow-hidden rounded-2xl border border-line bg-surface transition hover:border-[#2f333b]">
+        {article.imageUrl ? (
+          <Link href={readerHref} className="block">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt=""
+              className="h-52 w-full object-cover md:h-72"
+              loading="lazy"
+              src={article.imageUrl}
+            />
+          </Link>
+        ) : null}
+
+        <div className="p-5 md:p-6">
+          <Meta article={article} />
+          <Link href={readerHref}>
+            <h2 className="mt-2.5 text-[17px] font-semibold leading-snug text-ink transition group-hover:text-rh-green">
+              {article.title}
+            </h2>
+          </Link>
+          {article.summary ? (
+            <p className="mt-3 line-clamp-3 text-[15px] leading-7 text-muted">
+              {article.summary}
+            </p>
+          ) : null}
+          <Footer tickers={tickers} />
+        </div>
+      </article>
+    );
+  }
 
   return (
-    <article
-      className={`group rounded-3xl border border-slate-200 bg-white p-5 shadow-card transition hover:-translate-y-0.5 hover:border-teal-200 ${
-        featured ? "md:p-7" : ""
-      }`}
-    >
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-        <span className="rounded-full bg-teal-50 px-3 py-1 text-market">
-          {article.category}
-        </span>
-        <span>{article.sourceName}</span>
-        <span aria-hidden="true">·</span>
-        <time dateTime={article.publishedAt}>{formatDate(article.publishedAt)}</time>
-      </div>
-
-      <Link href={`/reader/${encodeURIComponent(article.id)}`}>
-        <h2
-          className={`font-black leading-tight tracking-tight text-ink group-hover:text-market ${
-            featured ? "text-3xl md:text-5xl" : "text-xl"
-          }`}
-        >
-          {article.title}
-        </h2>
-      </Link>
-
-      {article.summary ? (
-        <p
-          className={`mt-4 leading-7 text-slate-600 ${
-            featured ? "text-base md:text-lg" : "text-sm"
-          }`}
-        >
-          {article.summary}
-        </p>
-      ) : null}
-
-      <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-        <Link
-          className="text-sm font-bold text-market"
-          href={`/reader/${encodeURIComponent(article.id)}`}
-        >
-          Reader mode
+    <article className="group flex gap-4 px-5 py-4 transition hover:bg-surface-2">
+      <div className="min-w-0 flex-1">
+        <Meta article={article} />
+        <Link href={readerHref}>
+          <h3 className="mt-1.5 line-clamp-3 text-[17px] font-semibold leading-snug text-ink transition group-hover:text-rh-green">
+            {article.title}
+          </h3>
         </Link>
         {tickers.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
             {tickers.map((ticker) => (
-              <Link
-                className="rounded-full bg-slate-950 px-2.5 py-1 text-xs font-black text-white transition hover:bg-market"
-                href={`/?tag=${encodeURIComponent(ticker)}`}
-                key={ticker}
-              >
-                ${ticker}
-              </Link>
+              <TickerChip key={ticker} ticker={ticker} />
             ))}
           </div>
         ) : null}
       </div>
+
+      {article.imageUrl ? (
+        <Link
+          href={readerHref}
+          className="hidden shrink-0 self-start sm:block"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            alt=""
+            className="size-24 rounded-xl object-cover"
+            loading="lazy"
+            src={article.imageUrl}
+          />
+        </Link>
+      ) : null}
     </article>
   );
 }
 
-function formatDate(value: string): string {
+function Meta({ article }: { article: Article }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-faint">
+      <span className="text-muted">{article.sourceName}</span>
+      <span aria-hidden="true">·</span>
+      <span>{formatRelative(article.publishedAt)}</span>
+      <span className="rounded-full bg-rh-green-soft px-2 py-0.5 text-[10px] uppercase tracking-wide text-rh-green">
+        {article.category}
+      </span>
+    </div>
+  );
+}
+
+function Footer({ tickers }: { tickers: string[] }) {
+  if (tickers.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-5 flex flex-wrap gap-1.5">
+      {tickers.map((ticker) => (
+        <TickerChip key={ticker} ticker={ticker} />
+      ))}
+    </div>
+  );
+}
+
+function TickerChip({ ticker }: { ticker: string }) {
+  return (
+    <Link
+      className="rounded-md border border-line bg-surface-2 px-2 py-0.5 text-xs font-bold text-ink transition hover:border-rh-green hover:text-rh-green"
+      href={`/?tag=${encodeURIComponent(ticker)}`}
+    >
+      {ticker}
+    </Link>
+  );
+}
+
+function formatRelative(value: string): string {
+  const then = new Date(value).getTime();
+  if (Number.isNaN(then)) {
+    return "";
+  }
+
+  const diffMs = Date.now() - then;
+  const minutes = Math.round(diffMs / 60000);
+
+  if (minutes < 1) {
+    return "now";
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+
+  const days = Math.round(hours / 24);
+  if (days < 7) {
+    return `${days}d ago`;
+  }
+
   return new Intl.DateTimeFormat("en", {
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(new Date(value));
+  }).format(then);
 }

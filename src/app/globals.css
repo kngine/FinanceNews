@@ -1,31 +1,46 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink: #111827;
-  --color-paper: #f8fafc;
-  --color-market: #0f766e;
-  --shadow-card: 0 18px 45px rgba(15, 23, 42, 0.08);
+  /* Robinhood-inspired palette */
+  --color-rh-green: #00c805;
+  --color-rh-green-soft: rgba(0, 200, 5, 0.12);
+  --color-rh-red: #ff5000;
+
+  --color-ink: #ffffff;
+  --color-muted: #9a9da3;
+  --color-faint: #6b6f76;
+
+  --color-bg: #000000;
+  --color-surface: #0e0f12;
+  --color-surface-2: #16181d;
+  --color-line: #23262d;
+
+  --shadow-card: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 :root {
-  color-scheme: light;
-  --background: #f8fafc;
-  --foreground: #111827;
+  color-scheme: dark;
+  --background: #000000;
+  --foreground: #ffffff;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at top left, rgba(20, 184, 166, 0.14), transparent 32rem),
-    var(--background);
+  overscroll-behavior-y: contain;
+  background: var(--background);
   color: var(--foreground);
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    "SF Pro Display", "SF Pro Text", Inter, ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -39,6 +54,26 @@ select {
   font: inherit;
 }
 
+select {
+  color-scheme: dark;
+}
+
 ::selection {
-  background: rgba(20, 184, 166, 0.24);
+  background: rgba(0, 200, 5, 0.28);
+}
+
+/* Thin, dark scrollbars to match the app chrome */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2d34 transparent;
+}
+
+*::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #2a2d34;
+  border-radius: 9999px;
 }
