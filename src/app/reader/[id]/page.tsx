@@ -7,7 +7,7 @@ import type { ReaderSource } from "@/lib/news/readerContent";
 import type { Article } from "@/lib/news/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 26;
 
 type ReaderPageProps = {
   params: Promise<{

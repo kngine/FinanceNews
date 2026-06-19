@@ -57,7 +57,23 @@ const GOOGLEBOT_UA =
   "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
 export async function getReaderContent(article: Article): Promise<ReaderContent> {
-  return getCachedReaderContent(article.url, article.title, article.summary);
+  try {
+    return await getCachedReaderContent(
+      article.url,
+      article.title,
+      article.summary,
+    );
+  } catch {
+    // Absolute last resort: never throw out of the reader page.
+    return {
+      title: article.title,
+      byline: "",
+      excerpt: article.summary,
+      paragraphs: article.summary ? [article.summary] : [],
+      source: "rss",
+      wordCount: article.summary ? article.summary.split(/\s+/).length : 0,
+    };
+  }
 }
 
 const getCachedReaderContent = unstable_cache(
@@ -66,9 +82,6 @@ const getCachedReaderContent = unstable_cache(
     fallbackTitle: string,
     fallbackSummary: string,
   ): Promise<ReaderContent> => {
-    const { JSDOM } = await import("jsdom");
-    const { Readability } = await import("@mozilla/readability");
-
     let best: Candidate | null = null;
 
     const consider = (candidate: Candidate | null) => {
@@ -82,93 +95,135 @@ const getCachedReaderContent = unstable_cache(
 
     const isStrong = () => Boolean(best && contentLength(best) >= STRONG_CONTENT_CHARS);
 
-    const parseDocument = (html: string): Document | null => {
+    try {
+      // jsdom / Readability rely on native-ish behavior that can fail to load
+      // in some serverless runtimes. Load them defensively — if unavailable we
+      // simply rely on the Jina proxy (which needs no DOM) below.
+      let JSDOM: JSDOMConstructor | null = null;
+      let Readability:
+        | typeof import("@mozilla/readability").Readability
+        | null = null;
       try {
-        const document = new JSDOM(html, { url }).window.document;
-        consider(extractJsonLd(document, fallbackTitle));
-        consider(extractWithReadability(document, Readability, JSDOM, fallbackTitle));
-        consider(extractArticleParagraphs(document, fallbackTitle));
-        if (!best) {
-          const description = metaDescription(document);
-          if (description) {
-            consider({
-              title: titleFromDocument(document) || fallbackTitle,
-              byline: "",
-              excerpt: description,
-              paragraphs: [description],
-              source: "metadata",
-            });
-          }
-        }
-        return document;
+        ({ JSDOM } = await import("jsdom"));
+        ({ Readability } = await import("@mozilla/readability"));
       } catch {
-        return null;
-      }
-    };
-
-    const work = (async () => {
-      // Strategy 1 & 2: fetch the publisher HTML with two user agents in
-      // parallel (Googlebot first — it slips past many soft paywalls), then
-      // run every extractor against whichever response looks richest.
-      const [googlebotHtml, browserHtml] = await Promise.all([
-        safeFetchHtml(url, GOOGLEBOT_UA, HTML_FETCH_TIMEOUT_MS),
-        safeFetchHtml(url, BROWSER_UA, HTML_FETCH_TIMEOUT_MS),
-      ]);
-
-      let primaryDoc: Document | null = null;
-      for (const html of [googlebotHtml, browserHtml]) {
-        if (!html) {
-          continue;
-        }
-        const document = parseDocument(html);
-        if (document && !primaryDoc) {
-          primaryDoc = document;
-        }
-        if (isStrong()) {
-          break;
-        }
+        JSDOM = null;
+        Readability = null;
       }
 
-      // Strategy 3: follow the AMP version, which is usually lean and
-      // paywall-free, when the page advertises one.
-      if (primaryDoc && !isStrong()) {
-        const ampUrl = findAmpUrl(primaryDoc, url);
-        if (ampUrl && ampUrl !== url) {
-          const ampHtml = await safeFetchHtml(ampUrl, GOOGLEBOT_UA, AMP_FETCH_TIMEOUT_MS);
-          if (ampHtml) {
-            try {
-              const ampDoc = new JSDOM(ampHtml, { url: ampUrl }).window.document;
-              consider(toSource(extractJsonLd(ampDoc, fallbackTitle), "amp"));
-              consider(
-                toSource(
-                  extractWithReadability(ampDoc, Readability, JSDOM, fallbackTitle),
-                  "amp",
-                ),
+      const parseDocument = (
+        html: string,
+        jsdomCtor: JSDOMConstructor,
+        ReadabilityCtor: typeof import("@mozilla/readability").Readability,
+      ): Document | null => {
+        try {
+          const document = new jsdomCtor(html, { url }).window.document;
+          consider(extractJsonLd(document, fallbackTitle));
+          consider(
+            extractWithReadability(document, ReadabilityCtor, jsdomCtor, fallbackTitle),
+          );
+          consider(extractArticleParagraphs(document, fallbackTitle));
+          if (!best) {
+            const description = metaDescription(document);
+            if (description) {
+              consider({
+                title: titleFromDocument(document) || fallbackTitle,
+                byline: "",
+                excerpt: description,
+                paragraphs: [description],
+                source: "metadata",
+              });
+            }
+          }
+          return document;
+        } catch {
+          return null;
+        }
+      };
+
+      const work = (async () => {
+        if (JSDOM && Readability) {
+          const jsdomCtor = JSDOM;
+          const ReadabilityCtor = Readability;
+
+          // Strategy 1 & 2: fetch the publisher HTML with two user agents in
+          // parallel (Googlebot first — it slips past many soft paywalls),
+          // then run every extractor against whichever response looks richest.
+          const [googlebotHtml, browserHtml] = await Promise.all([
+            safeFetchHtml(url, GOOGLEBOT_UA, HTML_FETCH_TIMEOUT_MS),
+            safeFetchHtml(url, BROWSER_UA, HTML_FETCH_TIMEOUT_MS),
+          ]);
+
+          let primaryDoc: Document | null = null;
+          for (const html of [googlebotHtml, browserHtml]) {
+            if (!html) {
+              continue;
+            }
+            const document = parseDocument(html, jsdomCtor, ReadabilityCtor);
+            if (document && !primaryDoc) {
+              primaryDoc = document;
+            }
+            if (isStrong()) {
+              break;
+            }
+          }
+
+          // Strategy 3: follow the AMP version, which is usually lean and
+          // paywall-free, when the page advertises one.
+          if (primaryDoc && !isStrong()) {
+            const ampUrl = findAmpUrl(primaryDoc, url);
+            if (ampUrl && ampUrl !== url) {
+              const ampHtml = await safeFetchHtml(
+                ampUrl,
+                GOOGLEBOT_UA,
+                AMP_FETCH_TIMEOUT_MS,
               );
-              consider(toSource(extractArticleParagraphs(ampDoc, fallbackTitle), "amp"));
-            } catch {
-              // Ignore malformed AMP markup.
+              if (ampHtml) {
+                try {
+                  const ampDoc = new jsdomCtor(ampHtml, { url: ampUrl }).window
+                    .document;
+                  consider(toSource(extractJsonLd(ampDoc, fallbackTitle), "amp"));
+                  consider(
+                    toSource(
+                      extractWithReadability(
+                        ampDoc,
+                        ReadabilityCtor,
+                        jsdomCtor,
+                        fallbackTitle,
+                      ),
+                      "amp",
+                    ),
+                  );
+                  consider(
+                    toSource(extractArticleParagraphs(ampDoc, fallbackTitle), "amp"),
+                  );
+                } catch {
+                  // Ignore malformed AMP markup.
+                }
+              }
             }
           }
         }
-      }
 
-      // Strategy 4: when local extraction is thin (JS-rendered pages, hard
-      // paywalls), fall back to the Jina AI reader proxy, which renders the
-      // page server-side and returns clean article text.
-      if (!isStrong()) {
-        consider(await fetchViaJina(url, fallbackTitle, JINA_FETCH_TIMEOUT_MS));
-      }
-    })();
+        // Strategy 4: when local extraction is thin or jsdom is unavailable,
+        // fall back to the Jina AI reader proxy, which renders the page
+        // server-side and returns clean article text without needing a DOM.
+        if (!isStrong()) {
+          consider(await fetchViaJina(url, fallbackTitle, JINA_FETCH_TIMEOUT_MS));
+        }
+      })();
 
-    // Whichever finishes first: the extraction work or the time budget. Either
-    // way `best` holds the richest candidate gathered so far.
-    await Promise.race([
-      work.catch(() => undefined),
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, EXTRACTION_BUDGET_MS);
-      }),
-    ]);
+      // Whichever finishes first: the extraction work or the time budget.
+      // Either way `best` holds the richest candidate gathered so far.
+      await Promise.race([
+        work.catch(() => undefined),
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, EXTRACTION_BUDGET_MS);
+        }),
+      ]);
+    } catch {
+      // Never let extraction failures crash the reader request.
+    }
 
     if (best) {
       return finalize(best);
