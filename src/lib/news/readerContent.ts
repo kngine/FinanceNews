@@ -40,6 +40,81 @@ const BLOCKED_TEXT_PATTERNS = [
   /to continue reading/i,
 ];
 
+// Header/footer "chrome" that publishers wrap around the actual story:
+// newsletter prompts, social calls-to-action, related-link rails, legal
+// notices, wire-service editorial credits, photo captions, etc. These add no
+// value in reader mode, so we drop any paragraph that matches — regardless of
+// where it sits in the extracted text.
+const BOILERPLATE_PATTERNS: RegExp[] = [
+  // Newsletter / subscription prompts
+  /sign up for (our|the|a)\b.*\b(newsletter|briefing|digest|daily|weekly|report)/i,
+  /subscribe to (our|the)\b/i,
+  /get (our|the)\b.*\bnewsletter/i,
+  /delivered (straight )?to your inbox/i,
+  /^sign up (here|now|today|for free)/i,
+  /already a subscriber/i,
+  /become a (member|subscriber|supporter)/i,
+  /support (our|independent|quality) journalism/i,
+  /enjoy unlimited access/i,
+
+  // Follow / social calls-to-action
+  /^follow (us|me|@|along|the)\b/i,
+  /follow .{0,40}\bon (twitter|x|facebook|instagram|linkedin|youtube|threads)\b/i,
+  /like us on facebook/i,
+  /connect with us/i,
+  /join (the conversation|our community)/i,
+  /share this (article|story|post|page)/i,
+  /^share on\b/i,
+  /click to share/i,
+
+  // Related / more-content rails
+  /^(read|see) (more|also)\b/i,
+  /^related(\s|:|$)/i,
+  /^more (from|on|stories|coverage)\b/i,
+  /^recommended\b/i,
+  /^most (read|popular|viewed|recent)\b/i,
+  /^trending\b/i,
+  /^up next\b/i,
+  /^you (may|might) also like/i,
+  /^also read\b/i,
+  /^watch:/i,
+  /^in this article:/i,
+
+  // Legal / copyright
+  /all rights reserved/i,
+  /^copyright\b/i,
+  /^©/,
+  /terms of (service|use)/i,
+  /privacy policy/i,
+  /cookie (policy|settings|preferences|notice)/i,
+  /do not sell my (personal )?(information|data)/i,
+
+  // Wire-service / editorial footers
+  /^reporting by\b/i,
+  /^writing by\b/i,
+  /^editing by\b/i,
+  /^additional reporting by\b/i,
+  /our standards:/i,
+  /thomson reuters trust principles/i,
+  /this article was originally published/i,
+  /this story (was|has been) (originally )?(published|updated)/i,
+  /(first|originally) appeared on\b/i,
+  /^source:/i,
+
+  // Captions / credits
+  /getty images/i,
+  /^(photo|image|illustration|video|graphic|chart|figure):/i,
+  /^credit:/i,
+  /^\(image credit/i,
+
+  // Tips / engagement chrome
+  /have a (confidential )?(news )?tip/i,
+  /^contact (the author|us|the reporter)\b/i,
+  /^advertisement$/i,
+  /leave a comment/i,
+  /^comments?$/i,
+];
+
 // A candidate is "good enough" to stop searching once it clears this bar.
 const STRONG_CONTENT_CHARS = 1800;
 // Hard ceiling on total extraction time. Serverless platforms (Netlify,
@@ -245,7 +320,7 @@ const getCachedReaderContent = unstable_cache(
 );
 
 function finalize(candidate: Candidate): ReaderContent {
-  const paragraphs = dedupeParagraphs(candidate.paragraphs);
+  const paragraphs = stripBoilerplate(dedupeParagraphs(candidate.paragraphs));
   return {
     title: candidate.title,
     byline: candidate.byline,
@@ -600,8 +675,20 @@ function splitParagraphs(value: string): string[] {
 function isUsefulParagraph(value: string): boolean {
   return (
     value.length > 60 &&
-    !BLOCKED_TEXT_PATTERNS.some((pattern) => pattern.test(value))
+    !BLOCKED_TEXT_PATTERNS.some((pattern) => pattern.test(value)) &&
+    !isBoilerplate(value)
   );
+}
+
+function isBoilerplate(value: string): boolean {
+  return BOILERPLATE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+// Remove leftover header/footer chrome from the assembled article. This runs in
+// finalize so every extraction source (JSON-LD, Readability, AMP, Jina, …) is
+// cleaned the same way before the paragraphs reach the reader.
+function stripBoilerplate(paragraphs: string[]): string[] {
+  return paragraphs.filter((paragraph) => !isBoilerplate(paragraph));
 }
 
 function dedupeParagraphs(paragraphs: string[]): string[] {
